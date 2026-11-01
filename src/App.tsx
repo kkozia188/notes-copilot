@@ -52,7 +52,7 @@ export default function App() {
     <Group orientation="horizontal" className="app">
       <Panel defaultSize="18%" minSize="10%" collapsible>
         <div className="pane pane-tree">
-          <div className="brand">🤖 Notes Copilot</div>
+          <div className="brand"><span className="spark">✻</span> Notes Copilot</div>
           <NoteTree tree={tree} current={notePath} onOpen={open} />
         </div>
       </Panel>
@@ -89,6 +89,7 @@ export default function App() {
               notePath={notePath}
               ask={ask}
               onJump={jumpTo}
+              onNavigate={open}
               onPin={(path, anchor, quote, text) => {
                 addAnnotation(path, { color: "blue", anchor, quote, comment: text });
               }}

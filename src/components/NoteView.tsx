@@ -13,10 +13,11 @@ export type AskPayload = {
   preset?: string;
 };
 
+// Prompt structure adapted from HKUDS/DeepTutor learning/prompts (explain) and solve/prompts (plan → steps).
 export const PRESETS: { label: string; prompt: string }[] = [
-  { label: "解释", prompt: "用通俗的语言解释这段内容，先讲直觉再讲细节。" },
-  { label: "推导", prompt: "把这段的推导拆成每一步，写清每一步用到的定义或定理。" },
-  { label: "举例", prompt: "给一个机器人中的具体例子（最好带数值或代码）来说明这段内容。" },
+  { label: "解释", prompt: "解释这段内容：先用一个类比降低理解门槛，再给出准确的定义或结论，接着举 1–2 个具体例子（最好是机器人中的），最后指出常见误解。" },
+  { label: "推导", prompt: "把这段推导拆开讲：先用一两句话说明整体思路并列出步骤（2–6 步），再逐步展开，每一步写清用到的定义或定理，最后总结得到的结论及其意义。" },
+  { label: "举例", prompt: "给一个机器人中的具体例子来说明这段内容，最好带数值演算或一小段可运行的代码（Python/NumPy 或 C++/Eigen）。" },
 ];
 
 type Props = {

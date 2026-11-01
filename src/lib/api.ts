@@ -9,12 +9,20 @@ export async function fetchNote(path: string): Promise<string> {
   return r.text();
 }
 
-type ChatEvent = { type: "text"; text: string } | { type: "error"; message: string } | { type: "done" };
+export type ChatEvent =
+  | { type: "session"; id: string }
+  | { type: "text"; text: string }
+  | { type: "tool"; name: string; detail: string }
+  | { type: "done"; costUsd?: number; durationMs?: number }
+  | { type: "error"; message: string; code?: "session_lost" | "auth" };
 
-/** Stream a chat completion; calls onText for each chunk. */
+export const fetchConfig = (): Promise<{ backend: "cli" | "api"; model: string | null }> =>
+  fetch("/api/config").then((r) => r.json());
+
+/** Stream a chat turn; calls onEvent for each server event. */
 export async function streamChat(
-  body: { notePath?: string; section?: string; messages: ChatTurn[] },
-  onText: (t: string) => void,
+  body: { notePath?: string; section?: string; sessionId?: string; messages: ChatTurn[] },
+  onEvent: (e: ChatEvent) => void,
   signal?: AbortSignal,
 ): Promise<void> {
   const res = await fetch("/api/chat", {
@@ -34,10 +42,7 @@ export async function streamChat(
     while ((nl = buf.indexOf("\n")) !== -1) {
       const line = buf.slice(0, nl).trim();
       buf = buf.slice(nl + 1);
-      if (!line) continue;
-      const ev = JSON.parse(line) as ChatEvent;
-      if (ev.type === "text") onText(ev.text);
-      else if (ev.type === "error") throw new Error(ev.message);
+      if (line) onEvent(JSON.parse(line) as ChatEvent);
     }
   }
 }

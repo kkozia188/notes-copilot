@@ -5,7 +5,10 @@ import { Hono } from "hono";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { stream } from "hono/streaming";
-import Anthropic from "@anthropic-ai/sdk";
+import { apiBackend } from "./backends/api";
+import { cliBackend } from "./backends/cli";
+import type { Backend, ChatEvent, ChatTurn } from "./backends/types";
+import { buildSystemPrompt } from "./prompt";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 try {
@@ -16,14 +19,21 @@ try {
 
 const NOTES_DIR = path.join(ROOT, "notes");
 // App-specific variable names, so settings inherited from other tools (e.g. a Claude Code shell) don't leak in.
-const MODEL = process.env.NOTES_COPILOT_MODEL ?? "claude-opus-5-5";
+const MODEL = process.env.NOTES_COPILOT_MODEL ?? "claude-opus-5-5"; // API backend default; CLI uses its own default unless set
 const EFFORT = (process.env.NOTES_COPILOT_EFFORT ?? "medium") as "low" | "medium" | "high" | "xhigh" | "max";
-const API_KEY = process.env.ANTHROPIC_API_KEY;
-// Whole notes are sent as cached context; past this size fall back to the selected section only.
+// Whole notes go into the (cached) system prompt; past this size fall back to the selected section only.
 const MAX_NOTE_CHARS = 300_000;
+const BACKEND = (process.env.NOTES_COPILOT_BACKEND ?? "cli") as "cli" | "api";
 
-// Use only the API key from .env: ignore ANTHROPIC_AUTH_TOKEN / ANTHROPIC_BASE_URL that may be inherited.
-const client = new Anthropic({ apiKey: API_KEY ?? null, authToken: null, baseURL: "https://api.anthropic.com" });
+const backend: Backend =
+  BACKEND === "api"
+    ? apiBackend({ apiKey: process.env.ANTHROPIC_API_KEY, model: MODEL, effort: EFFORT })
+    : cliBackend({
+        notesDir: NOTES_DIR,
+        bin: process.env.NOTES_COPILOT_CLAUDE_BIN ?? "claude",
+        model: process.env.NOTES_COPILOT_MODEL,
+        effort: EFFORT,
+      });
 const app = new Hono();
 
 // ---------- notes ----------
@@ -72,94 +82,35 @@ app.get("/api/note", async (c) => {
 
 // ---------- chat ----------
 
-type ChatTurn = { role: "user" | "assistant"; content: string };
 type ChatRequest = {
   notePath?: string;
   /** Markdown of the section containing the quote, used when the note is too large. */
   section?: string;
   messages: ChatTurn[];
+  sessionId?: string;
 };
 
-const SYSTEM_PROMPT = `你是一位耐心、严谨的机器人学导师，正在陪用户阅读一套开源的机器人学习笔记（Robotics_Tutorial，作者 Pengfei Guo，CC BY-NC 4.0）。
-
-回答方式：
-- 用中文回答，术语可保留英文原文。
-- 先给直觉，再给严谨推导；推导要分步，每步说明依据。
-- 数学公式用 LaTeX：行内 $...$，独立公式 $$...$$。
-- 尽量联系笔记上下文和机器人中的实际例子（SLAM、操作臂、足式机器人、控制等）。
-- 如果用户引用了笔记中的一段，围绕这段回答；如果发现笔记本身有错误或不严谨之处，直接指出。
-- 不确定的内容要明确说不确定，不要编造文献或 API。`;
+app.get("/api/config", (c) => c.json({ backend: backend.name, model: backend.name === "api" ? MODEL : process.env.NOTES_COPILOT_MODEL ?? null }));
 
 app.post("/api/chat", async (c) => {
   const body = (await c.req.json()) as ChatRequest;
-  if (!Array.isArray(body.messages) || body.messages.length === 0) {
-    return c.json({ error: "messages required" }, 400);
+  if (!Array.isArray(body.messages) || body.messages.length === 0 || body.messages.at(-1)?.role !== "user") {
+    return c.json({ error: "messages must end with a user turn" }, 400);
   }
-
-  const system: Anthropic.Beta.BetaTextBlockParam[] = [{ type: "text", text: SYSTEM_PROMPT }];
   const abs = body.notePath ? resolveNote(body.notePath) : null;
-  if (abs) {
-    const note = await readFile(abs, "utf8").catch(() => "");
-    const context =
-      note.length <= MAX_NOTE_CHARS
-        ? note
-        : `（全文过长，仅提供相关小节）\n\n${body.section ?? ""}`;
-    system.push({
-      type: "text",
-      text: `<current_note path="${body.notePath}">\n${context}\n</current_note>`,
-      // Stable per note → cached across turns while the user stays on this note.
-      cache_control: { type: "ephemeral" },
-    });
-  }
-
-  const messages: Anthropic.Beta.BetaMessageParam[] = body.messages.map((m) => ({
-    role: m.role,
-    content: m.content,
-  }));
+  const note = abs ? await readFile(abs, "utf8").catch(() => "") : "";
+  const system = buildSystemPrompt({
+    notePath: body.notePath,
+    note: note.length <= MAX_NOTE_CHARS ? note : `（全文过长，仅提供相关小节）\n\n${body.section ?? ""}`,
+    canBrowse: backend.name === "cli",
+  });
 
   c.header("Content-Type", "application/x-ndjson; charset=utf-8");
-  if (!API_KEY) {
-    return c.body(
-      JSON.stringify({ type: "error", message: "未配置 API Key：在项目根目录创建 .env，写入 ANTHROPIC_API_KEY=sk-ant-...，然后重启 npm run dev" }) + "\n",
-    );
-  }
   return stream(c, async (out) => {
-    const send = (obj: unknown) => out.write(JSON.stringify(obj) + "\n");
-    try {
-      const s = client.beta.messages.stream({
-        model: MODEL,
-        max_tokens: 64000,
-        thinking: { type: "adaptive" },
-        output_config: { effort: EFFORT },
-        betas: ["server-side-fallback-2026-07-01"],
-        fallbacks: "default",
-        system,
-        messages,
-      });
-      out.onAbort(() => s.abort());
-      for await (const event of s) {
-        if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-          await send({ type: "text", text: event.delta.text });
-        }
-      }
-      const final = await s.finalMessage();
-      if (final.stop_reason === "refusal") {
-        await send({ type: "error", message: "模型拒绝回答该请求。" });
-      } else if (final.stop_reason === "max_tokens") {
-        await send({ type: "error", message: "回答过长被截断。" });
-      }
-      await send({ type: "done", usage: final.usage });
-    } catch (err) {
-      const message =
-        err instanceof Anthropic.AuthenticationError
-          ? "API Key 无效或未配置（检查 .env 中的 ANTHROPIC_API_KEY）"
-          : err instanceof Anthropic.RateLimitError
-            ? "触发速率限制，请稍后再试"
-            : err instanceof Anthropic.APIError
-              ? `API 错误 ${err.status ?? ""}: ${err.message}`
-              : String(err);
-      await send({ type: "error", message });
-    }
+    const ac = new AbortController();
+    out.onAbort(() => ac.abort());
+    const emit = (e: ChatEvent) => out.write(JSON.stringify(e) + "\n").then(() => undefined);
+    await backend.run({ notePath: body.notePath, system, messages: body.messages, sessionId: body.sessionId }, emit, ac.signal);
   });
 });
 
@@ -168,6 +119,8 @@ app.use("/*", serveStatic({ root: "./dist" }));
 
 const port = Number(process.env.PORT ?? 8787);
 serve({ fetch: app.fetch, port }, () => {
-  console.log(`API listening on http://localhost:${port}  (model: ${MODEL}, effort: ${EFFORT})`);
-  if (!API_KEY) console.warn("⚠ ANTHROPIC_API_KEY 未设置：请在 .env 中配置，否则对话不可用。");
+  console.log(`API listening on http://localhost:${port}  (backend: ${backend.name}, effort: ${EFFORT})`);
+  if (backend.name === "api" && !process.env.ANTHROPIC_API_KEY) {
+    console.warn("⚠ ANTHROPIC_API_KEY 未设置：请在 .env 中配置，或改用 NOTES_COPILOT_BACKEND=cli。");
+  }
 });
