@@ -21,7 +21,7 @@
 git clone --recursive https://github.com/kkozia188/notes-copilot.git
 cd notes-copilot
 npm install
-cp .env.example .env   # 填入 ANTHROPIC_API_KEY
+cp .env.example .env   # 填入 ANTHROPIC_API_KEY（必需，在 https://platform.claude.com/settings/keys 创建）
 npm run dev            # 前端 http://localhost:5173 ，后端 :8787
 ```
 
@@ -45,7 +45,7 @@ src/
     store.ts            ← 批注存储（localStorage）
 ```
 
-模型默认 `claude-opus-5-5`（effort `medium`），可在 `.env` 中用 `CLAUDE_MODEL` / `CLAUDE_EFFORT` 覆盖。
+模型默认 `claude-opus-5-5`（effort `medium`），可在 `.env` 中用 `NOTES_COPILOT_MODEL` / `NOTES_COPILOT_EFFORT` 覆盖。
 
 ## Roadmap
 

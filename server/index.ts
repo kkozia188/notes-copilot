@@ -7,20 +7,23 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { stream } from "hono/streaming";
 import Anthropic from "@anthropic-ai/sdk";
 
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 try {
-  process.loadEnvFile();
+  process.loadEnvFile(path.join(ROOT, ".env"));
 } catch {
   // no .env file — rely on the real environment
 }
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const NOTES_DIR = path.join(ROOT, "notes");
-const MODEL = process.env.CLAUDE_MODEL ?? "claude-opus-5-5";
-const EFFORT = (process.env.CLAUDE_EFFORT ?? "medium") as "low" | "medium" | "high" | "xhigh" | "max";
+// App-specific variable names, so settings inherited from other tools (e.g. a Claude Code shell) don't leak in.
+const MODEL = process.env.NOTES_COPILOT_MODEL ?? "claude-opus-5-5";
+const EFFORT = (process.env.NOTES_COPILOT_EFFORT ?? "medium") as "low" | "medium" | "high" | "xhigh" | "max";
+const API_KEY = process.env.ANTHROPIC_API_KEY;
 // Whole notes are sent as cached context; past this size fall back to the selected section only.
 const MAX_NOTE_CHARS = 300_000;
 
-const client = new Anthropic();
+// Use only the API key from .env: ignore ANTHROPIC_AUTH_TOKEN / ANTHROPIC_BASE_URL that may be inherited.
+const client = new Anthropic({ apiKey: API_KEY ?? null, authToken: null, baseURL: "https://api.anthropic.com" });
 const app = new Hono();
 
 // ---------- notes ----------
@@ -115,6 +118,11 @@ app.post("/api/chat", async (c) => {
   }));
 
   c.header("Content-Type", "application/x-ndjson; charset=utf-8");
+  if (!API_KEY) {
+    return c.body(
+      JSON.stringify({ type: "error", message: "未配置 API Key：在项目根目录创建 .env，写入 ANTHROPIC_API_KEY=sk-ant-...，然后重启 npm run dev" }) + "\n",
+    );
+  }
   return stream(c, async (out) => {
     const send = (obj: unknown) => out.write(JSON.stringify(obj) + "\n");
     try {
@@ -159,4 +167,7 @@ app.post("/api/chat", async (c) => {
 app.use("/*", serveStatic({ root: "./dist" }));
 
 const port = Number(process.env.PORT ?? 8787);
-serve({ fetch: app.fetch, port }, () => console.log(`API listening on http://localhost:${port}`));
+serve({ fetch: app.fetch, port }, () => {
+  console.log(`API listening on http://localhost:${port}  (model: ${MODEL}, effort: ${EFFORT})`);
+  if (!API_KEY) console.warn("⚠ ANTHROPIC_API_KEY 未设置：请在 .env 中配置，否则对话不可用。");
+});
