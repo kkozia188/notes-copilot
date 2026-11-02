@@ -8,7 +8,7 @@
     "typecheck": "tsc --noEmit -p .",
     "server": "tsx server/index.ts",
     "start": "tsx server/index.ts",
-    "test": "node --import tsx --test server/backends/codex.test.ts"
+    "test": "node --import tsx --test server/backends/codex.test.ts src/lib/latex.test.ts"
   },
   "license": "MIT",
   "type": "module",

@@ -4,6 +4,7 @@ import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import rehypeHighlight from "rehype-highlight";
+import { normalizeMathBlocks } from "../lib/latex";
 
 const RAW_BASE = "https://raw.githubusercontent.com/Michael-Jetson/Robotics_Tutorial/main/";
 
@@ -72,7 +73,7 @@ function MarkdownImpl({ markdown, notePath, onNavigate }: Props) {
         rehypePlugins={[[rehypeKatex, { throwOnError: false, strict: false }], [rehypeHighlight, { detect: false }]]}
         components={components}
       >
-        {markdown}
+        {normalizeMathBlocks(markdown)}
       </ReactMarkdown>
     </div>
   );
