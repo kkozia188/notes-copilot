@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useReducer, useRef, useState } from "react";
 import { Markdown } from "./Markdown";
 import type { AskPayload } from "./NoteView";
-import { fetchConfig, streamChat, type ChatEvent, type ChatTurn } from "../lib/api";
+import { fetchConfig, streamChat, type BackendConfig, type ChatEvent, type ChatTurn } from "../lib/api";
 import type { TextAnchor } from "../lib/anchor";
 import {
   answerText, clearConversation, getConversation, updateConversation, useChattedNotes, useConversation,
@@ -42,7 +42,7 @@ export function ChatPanel({ notePath, ask, onPin, onJump, onNavigate }: Props) {
   const [, rerender] = useReducer((x: number) => x + 1, 0);
   const [pending, setPending] = useState<AskPayload | null>(null);
   const [input, setInput] = useState("");
-  const [backend, setBackend] = useState<{ backend: "cli" | "api"; model: string | null } | null>(null);
+  const [backend, setBackend] = useState<BackendConfig | null>(null);
   const [showChats, setShowChats] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -199,7 +199,7 @@ export function ChatPanel({ notePath, ask, onPin, onJump, onNavigate }: Props) {
           <div className="chat-welcome">
             <div className="welcome-spark">✻</div>
             <h2>这一章想从哪里开始？</h2>
-            <p>我已经读过「{chapterTitle(notePath)}」全文{backend?.backend === "cli" ? "，也能翻阅笔记库里的其他章节" : ""}。
+            <p>我已经读过「{chapterTitle(notePath)}」全文{backend && backend.backend !== "api" ? "，也能翻阅笔记库里的其他章节" : ""}。
               在左侧选中任意文字，可以直接引用提问。</p>
             <div className="starters">
               {STARTERS.map((s) => (
@@ -266,8 +266,8 @@ export function ChatPanel({ notePath, ask, onPin, onJump, onNavigate }: Props) {
             }}
           />
           <div className="composer-row">
-            <span className="backend-badge" title={backend?.backend === "cli" ? "通过本机 Claude Code 登录运行" : "通过 Anthropic API 运行"}>
-              {backend ? (backend.backend === "cli" ? "Claude Code" : `API · ${backend.model}`) : "…"}
+            <span className="backend-badge" title={backend?.backend === "codex" ? `通过本机 Codex CLI 运行${backend.model ? ` · ${backend.model}` : ""}` : backend?.backend === "cli" ? "通过本机 Claude Code 登录运行" : "通过 Anthropic API 运行"}>
+              {backend ? (backend.backend === "codex" ? "Codex CLI" : backend.backend === "cli" ? "Claude Code" : `API · ${backend.model}`) : "…"}
             </span>
             <span className="grow" />
             {busy ? (

@@ -16,7 +16,8 @@ export type ChatEvent =
   | { type: "done"; costUsd?: number; durationMs?: number }
   | { type: "error"; message: string; code?: "session_lost" | "auth" };
 
-export const fetchConfig = (): Promise<{ backend: "cli" | "api"; model: string | null }> =>
+export type BackendConfig = { backend: "codex" | "cli" | "api"; model: string | null };
+export const fetchConfig = (): Promise<BackendConfig> =>
   fetch("/api/config").then((r) => r.json());
 
 /** Stream a chat turn; calls onEvent for each server event. */

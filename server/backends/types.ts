@@ -20,6 +20,6 @@ export type ChatInput = {
 };
 
 export type Backend = {
-  name: "cli" | "api";
+  name: "codex" | "cli" | "api";
   run(input: ChatInput, emit: (e: ChatEvent) => Promise<void>, signal: AbortSignal): Promise<void>;
 };

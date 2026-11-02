@@ -22,7 +22,7 @@ export type Turn = UserTurn | AssistantTurn;
 
 export type Conversation = {
   notePath: string;
-  /** Claude Code session (CLI backend) so follow-ups keep full context including tool results. */
+  /** CLI session (Codex IDs use a codex: prefix) for follow-ups with tool context. */
   sessionId?: string;
   turns: Turn[];
   updatedAt: number;

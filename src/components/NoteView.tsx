@@ -51,6 +51,7 @@ function caretAt(x: number, y: number): { node: Node; offset: number } | null {
 export function NoteView({ notePath, markdown, annotations, onAdd, onUpdate, onRemove, onAsk, onNavigate }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const articleRef = useRef<HTMLDivElement>(null);
+  const toolbarRef = useRef<HTMLDivElement>(null);
   const rangesRef = useRef(new Map<string, Range>());
   const [toolbar, setToolbar] = useState<Toolbar | null>(null);
   const [popover, setPopover] = useState<Popover | null>(null);
@@ -62,6 +63,18 @@ export function NoteView({ notePath, markdown, annotations, onAdd, onUpdate, onR
     setToolbar(null);
     setPopover(null);
   }, [notePath]);
+
+  // Keep the selection toolbar inside the note pane, including selections near its edges.
+  useLayoutEffect(() => {
+    const el = toolbarRef.current;
+    const pane = scrollRef.current;
+    if (!el || !pane || !toolbar) return;
+    const box = pane.getBoundingClientRect();
+    const rect = el.getBoundingClientRect();
+    const shift = rect.left < box.left + 8 ? box.left + 8 - rect.left
+      : rect.right > box.right - 8 ? box.right - 8 - rect.right : 0;
+    el.style.left = `${toolbar.x + shift}px`;
+  }, [toolbar]);
 
   // Paint highlights with the CSS Custom Highlight API (no DOM mutation → safe with KaTeX & React).
   useEffect(() => {
@@ -192,7 +205,7 @@ export function NoteView({ notePath, markdown, annotations, onAdd, onUpdate, onR
       </footer>
 
       {toolbar && (
-        <div className="floating toolbar" style={{ left: toolbar.x, top: toolbar.y }}>
+        <div ref={toolbarRef} className="floating toolbar" style={{ left: toolbar.x, top: toolbar.y }}>
           {COLORS.map((c) => (
             <button key={c} className={`swatch ${c}`} title="高亮" onClick={() => highlight(c)} />
           ))}

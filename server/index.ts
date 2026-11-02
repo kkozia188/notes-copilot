@@ -7,6 +7,7 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { stream } from "hono/streaming";
 import { apiBackend } from "./backends/api";
 import { cliBackend } from "./backends/cli";
+import { codexBackend, readCodexSettings } from "./backends/codex";
 import type { Backend, ChatEvent, ChatTurn } from "./backends/types";
 import { buildSystemPrompt } from "./prompt";
 
@@ -23,17 +24,27 @@ const MODEL = process.env.NOTES_COPILOT_MODEL ?? "claude-opus-5-5"; // API backe
 const EFFORT = (process.env.NOTES_COPILOT_EFFORT ?? "medium") as "low" | "medium" | "high" | "xhigh" | "max";
 // Whole notes go into the (cached) system prompt; past this size fall back to the selected section only.
 const MAX_NOTE_CHARS = 300_000;
-const BACKEND = (process.env.NOTES_COPILOT_BACKEND ?? "cli") as "cli" | "api";
+const BACKEND = process.env.NOTES_COPILOT_BACKEND ?? "codex";
+if (!["codex", "cli", "api"].includes(BACKEND)) throw new Error(`未知对话后端：${BACKEND}`);
+const codexSettings = BACKEND === "codex" ? await readCodexSettings() : undefined;
+const DISPLAY_MODEL = BACKEND === "api" ? MODEL : process.env.NOTES_COPILOT_MODEL ?? codexSettings?.model ?? null;
 
 const backend: Backend =
-  BACKEND === "api"
-    ? apiBackend({ apiKey: process.env.ANTHROPIC_API_KEY, model: MODEL, effort: EFFORT })
-    : cliBackend({
+  BACKEND === "codex"
+    ? codexBackend({
         notesDir: NOTES_DIR,
-        bin: process.env.NOTES_COPILOT_CLAUDE_BIN ?? "claude",
+        bin: process.env.NOTES_COPILOT_CODEX_BIN ?? "codex",
         model: process.env.NOTES_COPILOT_MODEL,
-        effort: EFFORT,
-      });
+        effort: EFFORT === "max" ? "xhigh" : EFFORT,
+      })
+    : BACKEND === "api"
+      ? apiBackend({ apiKey: process.env.ANTHROPIC_API_KEY, model: MODEL, effort: EFFORT })
+      : cliBackend({
+          notesDir: NOTES_DIR,
+          bin: process.env.NOTES_COPILOT_CLAUDE_BIN ?? "claude",
+          model: process.env.NOTES_COPILOT_MODEL,
+          effort: EFFORT,
+        });
 const app = new Hono();
 
 // ---------- notes ----------
@@ -90,7 +101,7 @@ type ChatRequest = {
   sessionId?: string;
 };
 
-app.get("/api/config", (c) => c.json({ backend: backend.name, model: backend.name === "api" ? MODEL : process.env.NOTES_COPILOT_MODEL ?? null }));
+app.get("/api/config", (c) => c.json({ backend: backend.name, model: DISPLAY_MODEL }));
 
 app.post("/api/chat", async (c) => {
   const body = (await c.req.json()) as ChatRequest;
@@ -102,7 +113,7 @@ app.post("/api/chat", async (c) => {
   const system = buildSystemPrompt({
     notePath: body.notePath,
     note: note.length <= MAX_NOTE_CHARS ? note : `（全文过长，仅提供相关小节）\n\n${body.section ?? ""}`,
-    canBrowse: backend.name === "cli",
+    canBrowse: backend.name !== "api",
   });
 
   c.header("Content-Type", "application/x-ndjson; charset=utf-8");
@@ -118,9 +129,10 @@ app.post("/api/chat", async (c) => {
 app.use("/*", serveStatic({ root: "./dist" }));
 
 const port = Number(process.env.PORT ?? 8787);
-serve({ fetch: app.fetch, port }, () => {
-  console.log(`API listening on http://localhost:${port}  (backend: ${backend.name}, effort: ${EFFORT})`);
+const hostname = process.env.HOST ?? "127.0.0.1";
+serve({ fetch: app.fetch, port, hostname }, () => {
+  console.log(`API listening on http://${hostname}:${port}  (backend: ${backend.name}, effort: ${EFFORT})`);
   if (backend.name === "api" && !process.env.ANTHROPIC_API_KEY) {
-    console.warn("⚠ ANTHROPIC_API_KEY 未设置：请在 .env 中配置，或改用 NOTES_COPILOT_BACKEND=cli。");
+    console.warn("⚠ ANTHROPIC_API_KEY 未设置：请在 .env 中配置，或改用 NOTES_COPILOT_BACKEND=codex。");
   }
 });

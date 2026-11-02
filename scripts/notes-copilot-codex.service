@@ -1,0 +1,17 @@
+[Unit]
+Description=Notes Copilot with Codex CLI
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/projects/notes-copilot-codex
+Environment=PATH=/usr/bin:/bin:%h/.npm-global/bin:%h/.local/bin
+ExecStart=/usr/bin/node %h/projects/notes-copilot-codex/node_modules/tsx/dist/cli.mjs server/index.ts
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=10
+KillMode=control-group
+
+[Install]
+WantedBy=default.target

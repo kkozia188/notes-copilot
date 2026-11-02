@@ -33,7 +33,7 @@ export function buildSystemPrompt(opts: { notePath?: string; note?: string; canB
   ];
   if (opts.canBrowse) {
     parts.push(`<notes_library>
-当前工作目录就是整个笔记库的根目录（约 430 篇 Markdown）。当问题涉及其他章节的概念、前置知识或交叉引用时，可以用 Glob / Grep / Read 查阅相关笔记，再结合回答。
+当前工作目录就是整个笔记库的根目录（约 430 篇 Markdown）。当问题涉及其他章节的概念、前置知识或交叉引用时，可以使用可用的只读查阅工具（如 rg、读取文件，或 Glob / Grep / Read）查阅相关笔记，再结合回答。只查阅笔记，不修改文件。
 引用其他笔记时，用相对于笔记库根目录的 Markdown 链接，例如 [专题2 Retraction](01_数学/20_微分几何与李群/20_Retraction与流形优化.md)，用户点击即可跳转。
 当前章节的全文已在下方给出，无需再次读取。
 </notes_library>`);
